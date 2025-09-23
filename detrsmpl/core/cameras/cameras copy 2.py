@@ -95,7 +95,7 @@ class MMCamerasBase(cameras.CamerasBase):
                 principal_point = principal_point.view(-1, 2)
                 kwargs.update(principal_point=principal_point)
 
-            K = self.get_default_projection_matrix(**kwargs)
+            K = self.get_default_projection_matrix(** kwargs)
 
             K, _, _ = convert_camera_matrix(K=K,
                                             is_perspective=is_perspective,
@@ -128,20 +128,7 @@ class MMCamerasBase(cameras.CamerasBase):
 
         super().__init__(**kwargs)
 
-    # def get_camera_plane_normals(self, **kwargs) -> torch.Tensor:
-    #     """Get the identity normal vector which stretchs out of the camera
-    #     plane.
-
-    #     Could pass `R` to override the camera extrinsic rotation matrix.
-    #     Returns:
-    #         torch.Tensor: shape will be (N, 3)
-    #     """
-    #     normals = torch.Tensor([0, 0, 1]).view(1, 3).to(self.device)
-    #     w2v_trans = self.get_world_to_view_transform(**kwargs)
-    #     normals = w2v_trans.inverse().transform_normals(normals)
-    #     return normals.view(-1, 3)
-
-    def get_camera_plane_normals(self, **kwargs) -> torch.Tensor:
+    def get_camera_plane_normals(self, ** kwargs) -> torch.Tensor:
         """Get the identity normal vector which stretchs out of the camera
         plane.
         
@@ -152,39 +139,18 @@ class MMCamerasBase(cameras.CamerasBase):
         # 记录原始设备
         original_device = self.device
         
-        # try:
-        # 方案 1: 完全在 CPU 上计算
+        # 在CPU上计算
         normals = torch.Tensor([0, 0, 1]).view(1, 3).cpu()
         
-        # 获取变换矩阵并转到 CPU
-        w2v_trans = self.get_world_to_view_transform(**kwargs)
-
+        # 获取变换矩阵并复制到CPU
+        w2v_trans = self.get_world_to_view_transform(** kwargs)
         w2v_trans_cpu = w2v_trans.clone().cpu()
-
-        normals = w2v_trans_cpu.inverse().transform_normals(normals)
         
-        # # 将变换移到 CPU 进行计算
-        # # 注意：需要处理 Transform3d 对象
-        # if hasattr(w2v_trans, '_matrix'):
-        #     # 保存原始矩阵
-        #     # original_matrix = w2v_trans._matrix
-        #     # # 创建 CPU 版本的变换
-        #     # w2v_trans._matrix = original_matrix.cpu()
-        #     normals = w2v_trans_cpu.inverse().transform_normals(normals)
-        #     # 恢复原始矩阵
-        #     # w2v_trans._matrix = original_matrix
-        # else:
-        #     # 如果是其他类型的 Transform，尝试直接操作
-        #     normals = w2v_trans.inverse().transform_normals(normals)
+        # 在CPU上执行变换
+        normals = w2v_trans_cpu.inverse().transform_normals(normals)
         
         # 将结果转回原始设备
         return normals.view(-1, 3).to(original_device)
-            
-        # except Exception as e:
-        #     # 如果 CPU 计算也失败，使用默认值
-        #     print(f"Warning: Camera normal calculation failed: {e}")
-        #     print("Using default normal vector [0, 0, 1]")
-        #     return torch.Tensor([[0, 0, 1]]).to(original_device)
 
     def compute_depth_of_points(self, points: torch.Tensor) -> torch.Tensor:
         """Compute depth of points to the camera plane.
@@ -195,10 +161,21 @@ class MMCamerasBase(cameras.CamerasBase):
         Returns:
             torch.Tensor: shape will be (batch_size, 1)
         """
+        # 保存原始设备
+        original_device = self.device
+        
+        # 将点移至CPU计算
+        points_cpu = points.to('cpu')
+        
+        # 获取变换矩阵并复制到CPU
         world_to_view_transform = self.get_world_to_view_transform()
-        world_to_view_points = world_to_view_transform.transform_points(
-            points.to(self.device))
-        return world_to_view_points[..., 2:3]
+        world_to_view_transform_cpu = world_to_view_transform.clone().cpu()
+        
+        # 在CPU上执行变换
+        world_to_view_points = world_to_view_transform_cpu.transform_points(points_cpu)
+        
+        # 将结果转回原始设备
+        return world_to_view_points[..., 2:3].to(original_device)
 
     def compute_normal_of_meshes(self, meshes: Meshes) -> torch.Tensor:
         """Compute normal of meshes in the camera view.
@@ -209,10 +186,21 @@ class MMCamerasBase(cameras.CamerasBase):
         Returns:
             torch.Tensor: shape will be (batch_size, 1)
         """
+        # 保存原始设备
+        original_device = self.device
+        
+        # 获取网格法线并移至CPU
+        verts_normals = meshes.verts_normals_padded().to('cpu')
+        
+        # 获取变换矩阵并复制到CPU
         world_to_view_transform = self.get_world_to_view_transform()
-        world_to_view_normals = world_to_view_transform.transform_normals(
-            meshes.verts_normals_padded().to(self.device))
-        return world_to_view_normals
+        world_to_view_transform_cpu = world_to_view_transform.clone().cpu()
+        
+        # 在CPU上执行变换
+        world_to_view_normals = world_to_view_transform_cpu.transform_normals(verts_normals)
+        
+        # 将结果转回原始设备
+        return world_to_view_normals.to(original_device)
 
     def __repr__(self):
         """Rewrite __repr__
@@ -467,8 +455,7 @@ class WeakPerspectiveCameras(MMCamerasBase):
                          R=R,
                          T=T,
                          device=device,
-                         convention=convention,
-                         **kwargs)
+                         convention=convention,** kwargs)
 
     @staticmethod
     def convert_orig_cam_to_matrix(
@@ -574,7 +561,7 @@ class WeakPerspectiveCameras(MMCamerasBase):
         return orig_cam
 
     @classmethod
-    def get_default_projection_matrix(cls, **args):
+    def get_default_projection_matrix(cls,** args):
         """Class method. Calculate the projective transformation matrix by
         default parameters.
 
@@ -651,37 +638,60 @@ class WeakPerspectiveCameras(MMCamerasBase):
             a Transform3d object which represents a batch of projection
                matrices of shape (N, 4, 4)
         """
-        K = kwargs.get('K', self.K)
+        # 保存原始设备
+        original_device = self.device
+        
+        # 在CPU上计算投影变换
+        K = kwargs.get('K', self.K).cpu()
+        
         if K is not None:
             if K.shape != (self._N, 4, 4):
                 msg = f'Expected K to have shape of ({self._N}, 4, 4)'
                 raise ValueError(msg)
         else:
-            K = self.compute_projection_matrix(
-                kwargs.get('scale_x', self.scale_x),
-                kwargs.get('scale_y', self.scale_y),
-                kwargs.get('transl_x', self.trans_x),
-                kwargs.get('transl_y', self.trans_y),
-                kwargs.get('aspect_ratio', self.aspect_ratio))
+            # 将参数移至CPU计算
+            scale_x = kwargs.get('scale_x', self.scale_x).cpu()
+            scale_y = kwargs.get('scale_y', self.scale_y).cpu()
+            transl_x = kwargs.get('transl_x', self.trans_x).cpu()
+            transl_y = kwargs.get('transl_y', self.trans_y).cpu()
+            aspect_ratio = kwargs.get('aspect_ratio', self.aspect_ratio).cpu()
+            
+            K = self.compute_projection_matrix(scale_x, scale_y, transl_x, transl_y, aspect_ratio)
 
-        transform = Transform3d(matrix=K.transpose(1, 2).contiguous(),
-                                device=self.device)
-        return transform
+        # 在CPU上创建变换矩阵
+        transform_cpu = Transform3d(matrix=K.transpose(1, 2).contiguous(), device='cpu')
+        
+        # 将变换矩阵转回原始设备
+        transform_matrix = transform_cpu.matrix.to(original_device)
+        return Transform3d(matrix=transform_matrix, device=original_device)
 
     def unproject_points(self,
                          xy_depth: torch.Tensor,
-                         world_coordinates: bool = True,
-                         **kwargs) -> torch.Tensor:
+                         world_coordinates: bool = True,** kwargs) -> torch.Tensor:
         """Sends points from camera coordinates (NDC or screen) back to camera
         view or world coordinates depending on the `world_coordinates` boolean
         argument of the function."""
+        # 保存原始设备
+        original_device = self.device
+        
+        # 将点移至CPU
+        xy_depth_cpu = xy_depth.to('cpu')
+        
         if world_coordinates:
+            # 获取完整投影变换并复制到CPU
             to_camera_transform = self.get_full_projection_transform(**kwargs)
+            to_camera_transform_cpu = to_camera_transform.clone().cpu()
         else:
-            to_camera_transform = self.get_projection_transform(**kwargs)
+            # 获取投影变换并复制到CPU
+            to_camera_transform = self.get_projection_transform(** kwargs)
+            to_camera_transform_cpu = to_camera_transform.clone().cpu()
 
-        unprojection_transform = to_camera_transform.inverse()
-        return unprojection_transform.transform_points(xy_depth)
+        # 在CPU上执行逆变换
+        unprojection_transform_cpu = to_camera_transform_cpu.inverse()
+        result_cpu = unprojection_transform_cpu.transform_points(xy_depth_cpu)
+        
+        # 将结果转回原始设备
+        return result_cpu.to(original_device)
 
     def is_perspective(self):
         """Boolean of whether is perspective."""
@@ -695,7 +705,7 @@ class WeakPerspectiveCameras(MMCamerasBase):
         """Not implemented."""
         raise NotImplementedError()
 
-    def to_screen_(self, **kwargs):
+    def to_screen_(self,** kwargs):
         """Not implemented."""
         raise NotImplementedError()
 
@@ -703,7 +713,7 @@ class WeakPerspectiveCameras(MMCamerasBase):
         """Not implemented."""
         raise NotImplementedError()
 
-    def to_screen(self, **kwargs):
+    def to_screen(self,** kwargs):
         """Not implemented."""
         raise NotImplementedError()
 
@@ -755,8 +765,7 @@ class PerspectiveCameras(cameras.PerspectiveCameras, MMCamerasBase):
                              R=R,
                              T=T,
                              K=K,
-                             convention=convention,
-                             **kwargs)
+                             convention=convention,** kwargs)
         if image_size is not None:
             if (self.image_size < 1).any():  # pyre-ignore
                 raise ValueError('Image_size provided has invalid values')
@@ -800,19 +809,42 @@ class PerspectiveCameras(cameras.PerspectiveCameras, MMCamerasBase):
             principal_point=principal_point,
             orthographic=False)
 
-    def get_ndc_camera_transform(self, **kwargs) -> Transform3d:
+    def get_ndc_camera_transform(self,** kwargs) -> Transform3d:
+        """修改后的方法，在CPU上计算NDC相机变换以避免cuSolver错误"""
+        # 保存原始设备
+        original_device = self.device
+        
         kwargs = kwargs.copy()
         # 将相机参数移至CPU 
         kwargs['cameras'] = kwargs['cameras'].cpu()
-        kwargs.pop('cameras', None)
-        return super().get_ndc_camera_transform(**kwargs)
+        # 获取原始变换并复制到CPU
+        original_transform = super().get_ndc_camera_transform(**kwargs)
+        transform_cpu = original_transform.clone().cpu()
+        
+        # 在CPU上计算矩阵（如果需要）
+        # 这里只是确保矩阵在CPU上，实际计算可能在super()调用中已经完成
+        matrix_cpu = transform_cpu.matrix
+        
+        # 将结果转回原始设备
+        matrix = matrix_cpu.to(original_device)
+        return Transform3d(matrix=matrix, device=original_device)
 
     def transform_points_screen(self,
                                 points,
-                                eps: Optional[float] = None,
-                                **kwargs) -> torch.Tensor:
+                                eps: Optional[float] = None,** kwargs) -> torch.Tensor:
+        """在CPU上执行点变换以避免cuSolver错误"""
+        # 保存原始设备
+        original_device = self.device
+        
+        # 将点移至CPU
+        points_cpu = points.to('cpu')
+        
+        # 调用父类方法在CPU上执行变换
         kwargs.pop('cameras', None)
-        return super().transform_points_screen(points, eps, **kwargs)
+        result_cpu = super().transform_points_screen(points_cpu, eps, **kwargs)
+        
+        # 将结果转回原始设备
+        return result_cpu.to(original_device)
 
 
 @CAMERAS.register_module(name=('FoVPerspectiveCameras', 'FoVPerspective',
@@ -830,8 +862,7 @@ class FoVPerspectiveCameras(cameras.FoVPerspectiveCameras, MMCamerasBase):
         T: Optional[torch.Tensor] = None,
         K: Optional[torch.Tensor] = None,
         device: Union[torch.device, str] = 'cpu',
-        convention: str = 'pytorch3d',
-        **kwargs,
+        convention: str = 'pytorch3d',** kwargs,
     ) -> None:
         """Initialize a camera.
 
@@ -862,8 +893,7 @@ class FoVPerspectiveCameras(cameras.FoVPerspectiveCameras, MMCamerasBase):
             R=R,
             T=T,
             K=K,
-            convention=convention,
-            **kwargs,
+            convention=convention,** kwargs,
         )
         self.degrees = degrees
 
@@ -880,21 +910,43 @@ class FoVPerspectiveCameras(cameras.FoVPerspectiveCameras, MMCamerasBase):
         return super(cameras.FoVPerspectiveCameras, self).__getitem__(index)
 
     def get_ndc_camera_transform(self, **kwargs) -> Transform3d:
+        """修改后的方法，在CPU上计算NDC相机变换以避免cuSolver错误"""
+        # 保存原始设备
+        original_device = self.device
         kwargs = kwargs.copy()
         # 将相机参数移至CPU 
         kwargs['cameras'] = kwargs['cameras'].cpu()
-        kwargs.pop('cameras', None)
-        return super().get_ndc_camera_transform(**kwargs)
+        
+        # 获取原始变换并复制到CPU
+        original_transform = super().get_ndc_camera_transform(** kwargs)
+        transform_cpu = original_transform.clone().cpu()
+        
+        # 在CPU上计算矩阵
+        matrix_cpu = transform_cpu.matrix
+        
+        # 将结果转回原始设备
+        matrix = matrix_cpu.to(original_device)
+        return Transform3d(matrix=matrix, device=original_device)
 
     def transform_points_screen(self,
                                 points,
-                                eps: Optional[float] = None,
-                                **kwargs) -> torch.Tensor:
+                                eps: Optional[float] = None,** kwargs) -> torch.Tensor:
+        """在CPU上执行点变换以避免cuSolver错误"""
+        # 保存原始设备
+        original_device = self.device
+        
+        # 将点移至CPU
+        points_cpu = points.to('cpu')
+        
+        # 调用父类方法在CPU上执行变换
         kwargs.pop('cameras', None)
-        return super().transform_points_screen(points, eps, **kwargs)
+        result_cpu = super().transform_points_screen(points_cpu, eps, **kwargs)
+        
+        # 将结果转回原始设备
+        return result_cpu.to(original_device)
 
     @classmethod
-    def get_default_projection_matrix(cls, **args) -> torch.Tensor:
+    def get_default_projection_matrix(cls,** args) -> torch.Tensor:
         """Class method. Calculate the projective transformation matrix by
         default parameters.
 
@@ -942,7 +994,7 @@ class FoVPerspectiveCameras(cameras.FoVPerspectiveCameras, MMCamerasBase):
         """Not implemented."""
         raise NotImplementedError()
 
-    def to_screen_(self, **kwargs):
+    def to_screen_(self,** kwargs):
         """Not implemented."""
         raise NotImplementedError()
 
@@ -950,7 +1002,7 @@ class FoVPerspectiveCameras(cameras.FoVPerspectiveCameras, MMCamerasBase):
         """Not implemented."""
         raise NotImplementedError()
 
-    def to_screen(self, **kwargs):
+    def to_screen(self,** kwargs):
         """Not implemented."""
         raise NotImplementedError()
 
@@ -969,8 +1021,7 @@ class OrthographicCameras(cameras.OrthographicCameras, MMCamerasBase):
         device: Union[torch.Tensor, str] = 'cpu',
         in_ndc: bool = True,
         image_size: Optional[torch.Tensor] = None,
-        convention: str = 'pytorch3d',
-        **kwargs,
+        convention: str = 'pytorch3d',** kwargs,
     ) -> None:
         """Initialize OrthographicCameras.
 
@@ -1003,8 +1054,7 @@ class OrthographicCameras(cameras.OrthographicCameras, MMCamerasBase):
                              R=R,
                              T=T,
                              K=K,
-                             convention=convention,
-                             **kwargs)
+                             convention=convention,** kwargs)
         if image_size is not None:
             if (self.image_size < 1).any():  # pyre-ignore
                 raise ValueError('Image_size provided has invalid values')
@@ -1012,18 +1062,40 @@ class OrthographicCameras(cameras.OrthographicCameras, MMCamerasBase):
             self.image_size = None
 
     def get_ndc_camera_transform(self, **kwargs) -> Transform3d:
+        """修改后的方法，在CPU上计算NDC相机变换以避免cuSolver错误"""
+        # 保存原始设备
+        original_device = self.device
         kwargs = kwargs.copy()
         # 将相机参数移至CPU 
         kwargs['cameras'] = kwargs['cameras'].cpu()
-        kwargs.pop('cameras', None)
-        return super().get_ndc_camera_transform(**kwargs)
+        
+        # 获取原始变换并复制到CPU
+        original_transform = super().get_ndc_camera_transform(** kwargs)
+        transform_cpu = original_transform.clone().cpu()
+        
+        # 在CPU上计算矩阵
+        matrix_cpu = transform_cpu.matrix
+        
+        # 将结果转回原始设备
+        matrix = matrix_cpu.to(original_device)
+        return Transform3d(matrix=matrix, device=original_device)
 
     def transform_points_screen(self,
                                 points,
-                                eps: Optional[float] = None,
-                                **kwargs) -> torch.Tensor:
+                                eps: Optional[float] = None,** kwargs) -> torch.Tensor:
+        """在CPU上执行点变换以避免cuSolver错误"""
+        # 保存原始设备
+        original_device = self.device
+        
+        # 将点移至CPU
+        points_cpu = points.to('cpu')
+        
+        # 调用父类方法在CPU上执行变换
         kwargs.pop('cameras', None)
-        return super().transform_points_screen(points, eps, **kwargs)
+        result_cpu = super().transform_points_screen(points_cpu, eps, **kwargs)
+        
+        # 将结果转回原始设备
+        return result_cpu.to(original_device)
 
     def __getitem__(self, index: Union[slice, int, torch.Tensor, List, Tuple]):
         """Slice the cameras by batch dim.
@@ -1038,7 +1110,7 @@ class OrthographicCameras(cameras.OrthographicCameras, MMCamerasBase):
         return super(cameras.OrthographicCameras, self).__getitem__(index)
 
     @classmethod
-    def get_default_projection_matrix(cls, **args) -> torch.Tensor:
+    def get_default_projection_matrix(cls,** args) -> torch.Tensor:
         """Class method. Calculate the projective transformation matrix by
         default parameters.
 
@@ -1093,8 +1165,7 @@ class FoVOrthographicCameras(cameras.FoVOrthographicCameras, MMCamerasBase):
             T: Optional[torch.Tensor] = None,
             K: Optional[torch.Tensor] = None,
             device: Union[torch.device, str] = 'cpu',
-            convention: str = 'pytorch3d',
-            **kwargs):
+            convention: str = 'pytorch3d',** kwargs):
         """reimplemented __init__, add `convention`.
 
         Args:
@@ -1132,8 +1203,7 @@ class FoVOrthographicCameras(cameras.FoVOrthographicCameras, MMCamerasBase):
                              R=R,
                              T=T,
                              K=K,
-                             convention=convention,
-                             **kwargs)
+                             convention=convention,** kwargs)
 
     def __getitem__(self, index: Union[slice, int, torch.Tensor, List, Tuple]):
         """Slice the cameras by batch dim.
@@ -1205,7 +1275,7 @@ class FoVOrthographicCameras(cameras.FoVOrthographicCameras, MMCamerasBase):
         K = K.repeat(batch_size, 1, 1)
         return K
 
-    def to_ndc_(self, **kwargs):
+    def to_ndc_(self,** kwargs):
         """Not implemented."""
         raise NotImplementedError()
 
@@ -1213,7 +1283,7 @@ class FoVOrthographicCameras(cameras.FoVOrthographicCameras, MMCamerasBase):
         """Not implemented."""
         raise NotImplementedError()
 
-    def to_ndc(self, **kwargs):
+    def to_ndc(self,** kwargs):
         """Not implemented."""
         raise NotImplementedError()
 
@@ -1221,19 +1291,42 @@ class FoVOrthographicCameras(cameras.FoVOrthographicCameras, MMCamerasBase):
         """Not implemented."""
         raise NotImplementedError()
 
-    def get_ndc_camera_transform(self, **kwargs) -> Transform3d:
+    def get_ndc_camera_transform(self,** kwargs) -> Transform3d:
+        """修改后的方法，在CPU上计算NDC相机变换以避免cuSolver错误"""
+        # 保存原始设备
+        original_device = self.device
+
         kwargs = kwargs.copy()
         # 将相机参数移至CPU 
         kwargs['cameras'] = kwargs['cameras'].cpu()
-        kwargs.pop('cameras', None)
-        return super().get_ndc_camera_transform(**kwargs)
+        
+        # 获取原始变换并复制到CPU
+        original_transform = super().get_ndc_camera_transform(**kwargs)
+        transform_cpu = original_transform.clone().cpu()
+        
+        # 在CPU上计算矩阵
+        matrix_cpu = transform_cpu.matrix
+        
+        # 将结果转回原始设备
+        matrix = matrix_cpu.to(original_device)
+        return Transform3d(matrix=matrix, device=original_device)
 
     def transform_points_screen(self,
                                 points,
-                                eps: Optional[float] = None,
-                                **kwargs) -> torch.Tensor:
+                                eps: Optional[float] = None,** kwargs) -> torch.Tensor:
+        """在CPU上执行点变换以避免cuSolver错误"""
+        # 保存原始设备
+        original_device = self.device
+        
+        # 将点移至CPU
+        points_cpu = points.to('cpu')
+        
+        # 调用父类方法在CPU上执行变换
         kwargs.pop('cameras', None)
-        return super().transform_points_screen(points, eps, **kwargs)
+        result_cpu = super().transform_points_screen(points_cpu, eps, **kwargs)
+        
+        # 将结果转回原始设备
+        return result_cpu.to(original_device)
 
 
 def concat_cameras(cameras_list: List[MMCamerasBase]) -> MMCamerasBase:

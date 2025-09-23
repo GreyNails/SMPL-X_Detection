@@ -160,7 +160,8 @@ class DeformableTransformerDecoderLayer(nn.Module):
         """
         # pdb.set_trace()
         assert cross_attn_mask is None
-
+        self_attn_mask=self_attn_mask.to(tgt.device) if self_attn_mask is not None else None
+         
         if self.self_attn is not None:
             q = k = self.with_pos_embed(tgt, tgt_query_pos)
             tgt2 = self.self_attn(q, k, tgt, attn_mask=self_attn_mask)[0]

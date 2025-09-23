@@ -21,7 +21,17 @@ from util.logger import setup_logger
 from util.config import DictAction, cfg
 from util.utils import ModelEma
 
-import debugpy
+os.environ['CUDA_LAUNCH_BLOCKING'] = '1'
+os.environ['CUBLAS_WORKSPACE_CONFIG'] = ':4096:8'
+# 设置 CUDA 设备
+# torch.cuda.set_device(0)  # 使用 GPU 0
+
+# 限制内存增长
+torch.cuda.empty_cache()
+torch.backends.cudnn.benchmark = False
+torch.backends.cudnn.deterministic = True
+
+# import debugpy
 def get_args_parser():
     parser = argparse.ArgumentParser('Set transformer detector',
                                      add_help=False)
@@ -130,7 +140,7 @@ def main(args):
         with open(save_json_path, 'w') as f:
             json.dump(vars(args), f, indent=2)
         logger.info('Full config saved to {}'.format(save_json_path))
-    logger.info('world size: {}'.format(args.world_size))
+    # logger.info('world size: {}'.format(args.world_size))
     logger.info('rank: {}'.format(args.rank))
     logger.info('local_rank: {}'.format(args.local_rank))
     logger.info('args: ' + str(args) + '\n')

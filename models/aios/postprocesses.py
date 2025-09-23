@@ -1154,7 +1154,7 @@ class PostProcess_SMPLX_Multi_Infer(nn.Module):
         smplx_jaw_pose = smpl_pose[:, :, 156:]
         
         if 'ann_idx' in data_batch_nc:
-            image_idx=[target.cpu().numpy()[0] for target in data_batch_nc['ann_idx']]
+            image_idx=[target.cpu().numpy()[0] for target in data_batch_nc['ann_idx'].data[0]]
 
         for bs in range(batch_size):
             results.append({
@@ -1177,9 +1177,9 @@ class PostProcess_SMPLX_Multi_Infer(nn.Module):
                         'lhand_bbox': lhand_boxes[bs],
                         'rhand_bbox': rhand_boxes[bs],
                         'face_bbox': face_boxes[bs],
-                        'bb2img_trans': data_batch_nc['bb2img_trans'][bs],
-                        'img2bb_trans': data_batch_nc['img2bb_trans'][bs],
-                        'img': data_batch_nc['img'][bs],
+                        'bb2img_trans': data_batch_nc['bb2img_trans'].data[0][bs],
+                        'img2bb_trans': data_batch_nc['img2bb_trans'].data[0][bs],
+                        'img': data_batch_nc['img'].data[0][bs],
                         'img_shape': data_batch_nc['img_shape'][bs]
                     })
 

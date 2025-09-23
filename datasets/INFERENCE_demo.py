@@ -37,7 +37,7 @@ class INFERENCE_demo(torch.utils.data.Dataset):
             use_pca=False,
             use_face_contour=True,
             batch_size = cfg.batch_size)
-        self.body_model = build_body_model(body_model_cfg).to('cuda') 
+        self.body_model = build_body_model(body_model_cfg).to('cuda') #cpu
         
         rank, _ = get_dist_info()
         if self.img_dir.endswith('.mp4'):
@@ -65,7 +65,10 @@ class INFERENCE_demo(torch.utils.data.Dataset):
         else:
             if rank == 0:
                 video_to_images(self.img_dir, self.tmp_dir)
-            dist.barrier()
+            # dist.barrier()    #single GPU下会报错
+            import torch.distributed as dist
+            if dist.is_available() and dist.is_initialized():
+                dist.barrier()  # 只有分布式环境已初始化时才调用
         
         self.img_paths = sorted(glob(self.tmp_dir +'/*',recursive=True))
         
@@ -161,7 +164,7 @@ class INFERENCE_demo(torch.utils.data.Dataset):
                     projection='perspective',
                     overwrite=True,
                     no_grad=True,
-                    device='cuda',
+                    device='cuda', #cpu
                     resolution=[img_shape[1],img_shape[0]],
                     render_choice='hq' 
                 )

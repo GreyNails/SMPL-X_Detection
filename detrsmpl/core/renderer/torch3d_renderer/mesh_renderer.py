@@ -64,16 +64,34 @@ class MeshRenderer(BaseRenderer):
         Returns:
             Union[torch.Tensor, None]: return tensor or None.
         """
+        self.rasterizer = self.rasterizer.to('cpu')
+        self.shader = self.shader.to('cpu')
 
-        meshes = meshes.to(self.device)
+        # meshes = meshes.to(self.device)
+        # meshes = meshes.to('cpu')
+        # cameras_cpu = cameras.to(self.device)
         self._update_resolution(cameras, **kwargs)
-        fragments = self.rasterizer(meshes_world=meshes, cameras=cameras)
+        # cameras = cameras.to(self.device)
+        print(f"meshes device: {meshes.device}")
+        print(f"cameras device: {cameras.device}")
+
+        # meshes_cpu=meshes.clone().to(self.device)
+        # cameras_cpu=cameras.clone().to(self.device)
+        meshes_cpu=meshes.clone().to('cpu')
+        cameras_cpu=cameras.clone().to('cpu')
+        print(f"self.device: {self.device}")
+        
+        try:fragments = self.rasterizer(meshes_world=meshes_cpu, cameras=cameras_cpu)
+
+        except:
+            fragments = self.rasterizer(meshes_world=meshes_cpu.to('cpu'), cameras=cameras_cpu.to('cpu'))
+
 
         rendered_images = self.shader(
             fragments=fragments,
-            meshes=meshes,
-            cameras=cameras,
-            lights=self.lights if lights is None else lights)
+            meshes=meshes_cpu.to('cpu'),
+            cameras=cameras_cpu.to('cpu'),
+            lights=self.lights.to('cpu') if lights is None else lights.to('cpu'))
 
         if self.output_path is not None:
             rgba = self.tensor2rgba(rendered_images)

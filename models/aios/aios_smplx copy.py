@@ -972,8 +972,6 @@ class AiOSSMPLX(nn.Module):
         masks = []
         for l, feat in enumerate(features):  # len(features=3)
             src, mask = feat.decompose()
-
-            # src
             srcs.append(self.input_proj[l](src))
             masks.append(mask)
             assert mask is not None
@@ -1845,13 +1843,11 @@ class AiOSSMPLX(nn.Module):
 
         data_batch_coco = []
         instance_dict = {}
-
-        print("img_list",len(data_batch['img'].data))
-        img_list = data_batch['img'].data[0].float() #FIX
+        img_list = data_batch['img'].float() #FIX
 
         # img_tensor = data_batch['img'].data  # 提取张量
         # img_list = img_tensor.float()
-        # print("img_list",len(img_list))
+
         batch_size, _, input_img_h, input_img_w = img_list.shape
         device = img_list.device
         masks = torch.ones((batch_size, input_img_h, input_img_w),
@@ -1920,11 +1916,11 @@ class AiOSSMPLX(nn.Module):
                                                     device=device)
                 data_batch_coco.append(instance_dict)               
             else:
-                instance_body_bbox = torch.cat([data_batch['body_bbox_center'].data[0][img_id],
-                                                data_batch['body_bbox_size'].data[0][img_id]],dim=-1)
+                instance_body_bbox = torch.cat([data_batch['body_bbox_center'][img_id],\
+                                                data_batch['body_bbox_size'][img_id]],dim=-1)
                 instance_dict = {}
                 # instance_dict['orig_size'] = data_batch['ori_shape'][img_id]
-                instance_dict['size'] = data_batch['img_shape'].data[img_id]  # after augmentation 
+                instance_dict['size'] = data_batch['img_shape'][img_id]  # after augmentation 
                 instance_dict['boxes'] = instance_body_bbox.float()    
                      
                 data_batch_coco.append(instance_dict)  

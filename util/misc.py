@@ -2,7 +2,10 @@
 
 Mostly copy-paste from torchvision references.
 """
-from mmcv.runner import get_dist_info, init_dist
+# from mmcv.runner import get_dist_info, init_dist
+from mmengine.dist.utils import get_dist_info, init_dist
+
+
 import os
 import random
 import subprocess
@@ -539,15 +542,43 @@ def save_on_master(*args, **kwargs):
     if is_main_process():
         torch.save(*args, **kwargs)
 
+# def init_distributed_mode_ssc(args): #single GPU下会报错
+#     init_dist('pytorch')
+#     args.rank, args.world_size = get_dist_info()
+#     args.local_rank = args.gpu = int(os.environ['LOCAL_RANK']) # args.rank % world_size
+#     args.distributed = True
+#     torch.cuda.set_device(args.local_rank)
+#     print("Before torch.distributed.barrier()")
+#     torch.distributed.barrier()
+#     print("End torch.distributed.barrier()")
+#     setup_for_distributed(args.rank == 0)
+
 def init_distributed_mode_ssc(args):
-    init_dist('pytorch')
-    args.rank, args.world_size = get_dist_info()
-    args.local_rank = args.gpu = int(os.environ['LOCAL_RANK']) # args.rank % world_size
+    # 新增：检查是否为分布式环境，非分布式则直接返回
+    if 'RANK' not in os.environ and 'WORLD_SIZE' not in os.environ:
+        args.distributed = False
+        return
+    
+    # 保留原有的分布式初始化逻辑
     args.distributed = True
-    torch.cuda.set_device(args.local_rank)
-    print("Before torch.distributed.barrier()")
+    if 'RANK' in os.environ:
+        args.rank = int(os.environ['RANK'])
+        args.gpu = int(os.environ['LOCAL_RANK'])
+    elif 'SLURM_PROCID' in os.environ:
+        args.rank = int(os.environ['SLURM_PROCID'])
+        args.gpu = args.rank % torch.cuda.device_count()
+    else:
+        print('Not using distributed mode')
+        args.distributed = False
+        return
+
+    torch.cuda.set_device(args.gpu)
+    args.dist_backend = 'nccl'
+    print('| distributed init (rank {}): {}'.format(
+        args.rank, args.dist_url), flush=True)
+    torch.distributed.init_process_group(backend=args.dist_backend, init_method=args.dist_url,
+                                         world_size=args.world_size, rank=args.rank)
     torch.distributed.barrier()
-    print("End torch.distributed.barrier()")
     setup_for_distributed(args.rank == 0)
 
 def init_distributed_mode(args):

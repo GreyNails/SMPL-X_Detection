@@ -801,9 +801,6 @@ class PerspectiveCameras(cameras.PerspectiveCameras, MMCamerasBase):
             orthographic=False)
 
     def get_ndc_camera_transform(self, **kwargs) -> Transform3d:
-        kwargs = kwargs.copy()
-        # 将相机参数移至CPU 
-        kwargs['cameras'] = kwargs['cameras'].cpu()
         kwargs.pop('cameras', None)
         return super().get_ndc_camera_transform(**kwargs)
 
@@ -880,9 +877,6 @@ class FoVPerspectiveCameras(cameras.FoVPerspectiveCameras, MMCamerasBase):
         return super(cameras.FoVPerspectiveCameras, self).__getitem__(index)
 
     def get_ndc_camera_transform(self, **kwargs) -> Transform3d:
-        kwargs = kwargs.copy()
-        # 将相机参数移至CPU 
-        kwargs['cameras'] = kwargs['cameras'].cpu()
         kwargs.pop('cameras', None)
         return super().get_ndc_camera_transform(**kwargs)
 
@@ -1012,9 +1006,6 @@ class OrthographicCameras(cameras.OrthographicCameras, MMCamerasBase):
             self.image_size = None
 
     def get_ndc_camera_transform(self, **kwargs) -> Transform3d:
-        kwargs = kwargs.copy()
-        # 将相机参数移至CPU 
-        kwargs['cameras'] = kwargs['cameras'].cpu()
         kwargs.pop('cameras', None)
         return super().get_ndc_camera_transform(**kwargs)
 
@@ -1222,9 +1213,6 @@ class FoVOrthographicCameras(cameras.FoVOrthographicCameras, MMCamerasBase):
         raise NotImplementedError()
 
     def get_ndc_camera_transform(self, **kwargs) -> Transform3d:
-        kwargs = kwargs.copy()
-        # 将相机参数移至CPU 
-        kwargs['cameras'] = kwargs['cameras'].cpu()
         kwargs.pop('cameras', None)
         return super().get_ndc_camera_transform(**kwargs)
 

@@ -294,7 +294,7 @@ class Transformer(nn.Module):
                 lvl_pos_embed = pos_embed
             lvl_pos_embed_flatten.append(lvl_pos_embed)
             src_flatten.append(src)
-            mask_flatten.append(mask)
+            mask_flatten.append(mask.to(src.device))
         src_flatten = torch.cat(src_flatten, 1)  # bs, \sum{hxw}, c
         mask_flatten = torch.cat(mask_flatten, 1)  # bs, \sum{hxw}
         lvl_pos_embed_flatten = torch.cat(lvl_pos_embed_flatten,
@@ -304,7 +304,7 @@ class Transformer(nn.Module):
                                          device=src_flatten.device)
         level_start_index = torch.cat((spatial_shapes.new_zeros(
             (1, )), spatial_shapes.prod(1).cumsum(0)[:-1]))
-        valid_ratios = torch.stack([self.get_valid_ratio(m) for m in masks], 1)
+        valid_ratios = torch.stack([self.get_valid_ratio(m.to(src.device)) for m in masks], 1)
         # two stage
         if self.two_stage_type in ['early', 'combine']:
             output_memory, output_proposals = gen_encoder_output_proposals(

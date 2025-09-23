@@ -72,14 +72,33 @@ class BackboneBase(nn.Module):
         self.num_channels = num_channels
 
     def forward(self, tensor_list: NestedTensor):
-        xs = self.body(tensor_list.tensors)
+        # input_device = tensor_list.tensors.device
+
+        device = next(self.parameters()).device
+        
+        # 将输入数据转移到模型所在设备
+        new_tensors = tensor_list.tensors.to(device)  # 转移张量
+        new_mask = tensor_list.mask.to(device)        # 转移掩码
+        tensor_list = NestedTensor(new_tensors, new_mask)  # 重新构造
+
+
+        # input_device = tensor_list.tensors.device
+        
+        # # 将模型参数移动到输入数据所在的设备
+        # self.to(input_device)
+
+
+        xs = self.body(tensor_list.tensors) #cpu to gpu
         out: Dict[str, NestedTensor] = {}
         for name, x in xs.items():
             m = tensor_list.mask
             assert m is not None
             mask = F.interpolate(m[None].float(),
                                  size=x.shape[-2:]).to(torch.bool)[0]
+            
+            # out[name] = NestedTensor(x.to(input_device), mask.to(input_device))
             out[name] = NestedTensor(x, mask)
+
         return out
 
 

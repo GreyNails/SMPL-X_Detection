@@ -195,6 +195,8 @@ class SMPLRenderer(BaseRenderer):
         # write temp images for the output video
         if self.output_path is not None:
 
+            images=images.to('cpu')
+
             if images is not None:
                 output_images = bgrs * valid_masks * self.alpha + \
                     images * valid_masks * (

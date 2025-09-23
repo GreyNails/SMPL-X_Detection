@@ -1,3 +1,5 @@
+camera.py:
+
 import math
 from typing import Iterable, List, Optional, Tuple, Union
 
@@ -801,9 +803,6 @@ class PerspectiveCameras(cameras.PerspectiveCameras, MMCamerasBase):
             orthographic=False)
 
     def get_ndc_camera_transform(self, **kwargs) -> Transform3d:
-        kwargs = kwargs.copy()
-        # 将相机参数移至CPU 
-        kwargs['cameras'] = kwargs['cameras'].cpu()
         kwargs.pop('cameras', None)
         return super().get_ndc_camera_transform(**kwargs)
 
@@ -880,9 +879,6 @@ class FoVPerspectiveCameras(cameras.FoVPerspectiveCameras, MMCamerasBase):
         return super(cameras.FoVPerspectiveCameras, self).__getitem__(index)
 
     def get_ndc_camera_transform(self, **kwargs) -> Transform3d:
-        kwargs = kwargs.copy()
-        # 将相机参数移至CPU 
-        kwargs['cameras'] = kwargs['cameras'].cpu()
         kwargs.pop('cameras', None)
         return super().get_ndc_camera_transform(**kwargs)
 
@@ -1012,9 +1008,6 @@ class OrthographicCameras(cameras.OrthographicCameras, MMCamerasBase):
             self.image_size = None
 
     def get_ndc_camera_transform(self, **kwargs) -> Transform3d:
-        kwargs = kwargs.copy()
-        # 将相机参数移至CPU 
-        kwargs['cameras'] = kwargs['cameras'].cpu()
         kwargs.pop('cameras', None)
         return super().get_ndc_camera_transform(**kwargs)
 
@@ -1222,9 +1215,6 @@ class FoVOrthographicCameras(cameras.FoVOrthographicCameras, MMCamerasBase):
         raise NotImplementedError()
 
     def get_ndc_camera_transform(self, **kwargs) -> Transform3d:
-        kwargs = kwargs.copy()
-        # 将相机参数移至CPU 
-        kwargs['cameras'] = kwargs['cameras'].cpu()
         kwargs.pop('cameras', None)
         return super().get_ndc_camera_transform(**kwargs)
 
@@ -1481,3 +1471,28 @@ def compute_direction_cameras(
                                     convention_src='pytorch3d',
                                     convention_dst=convention)
     return K, R, T
+
+
+Exception has occurred: RuntimeError
+cusolver error: CUSOLVER_STATUS_INTERNAL_ERROR, when calling `cusolverDnCreate(handle)`
+  File "/home/dell/DataTool-HumanCentric/detection_aios/AiOS/detrsmpl/core/cameras/cameras.py", line 805, in get_ndc_camera_transform
+    return super().get_ndc_camera_transform(**kwargs)
+  File "/home/dell/DataTool-HumanCentric/detection_aios/AiOS/detrsmpl/core/renderer/torch3d_renderer/mesh_renderer.py", line 70, in forward
+    fragments = self.rasterizer(meshes_world=meshes, cameras=cameras)
+  File "/home/dell/DataTool-HumanCentric/detection_aios/AiOS/detrsmpl/core/renderer/torch3d_renderer/smpl_renderer.py", line 179, in forward
+    rendered_tensor = self.image_renderer(meshes=meshes,
+  File "/home/dell/DataTool-HumanCentric/detection_aios/AiOS/detrsmpl/core/renderer/torch3d_renderer/render_runner.py", line 112, in render
+    images_batch = renderer(indexes=indexes, **foward_params_batch)
+  File "/home/dell/DataTool-HumanCentric/detection_aios/AiOS/detrsmpl/core/visualization/visualize_smpl.py", line 1038, in render_smpl
+    results = render_runner.render(renderer=renderer,
+  File "/home/dell/DataTool-HumanCentric/detection_aios/AiOS/datasets/INFERENCE_demo.py", line 150, in inference
+    render_smpl(
+  File "/home/dell/DataTool-HumanCentric/detection_aios/AiOS/engine.py", line 345, in inference
+    dataset.inference(result)
+  File "/home/dell/DataTool-HumanCentric/detection_aios/AiOS/main.py", line 301, in main
+    inference(model,
+  File "/home/dell/DataTool-HumanCentric/detection_aios/AiOS/main.py", line 399, in <module>
+    main(args)
+RuntimeError: cusolver error: CUSOLVER_STATUS_INTERNAL_ERROR, when calling `cusolverDnCreate(handle)`
+
+帮我通过使用cpu计算（计算时候数据移动到cpu计算好后移到原来设备的方式）回避上述报错，给出修改后完整的camera.py
