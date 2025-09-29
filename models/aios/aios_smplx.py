@@ -1715,13 +1715,13 @@ class AiOSSMPLX(nn.Module):
             'pred_lhand_keypoints': outputs_lhand_keypoints_list[-1],
             'pred_rhand_keypoints': outputs_rhand_keypoints_list[-1],
             'pred_face_keypoints': outputs_face_keypoints_list[-1],
-            'pred_smpl_pose': outputs_smpl_pose_list[-1],
-            'pred_smpl_rhand_pose': outputs_smpl_rhand_pose_list[-1],
-            'pred_smpl_lhand_pose': outputs_smpl_lhand_pose_list[-1],
+            'pred_smpl_pose': outputs_smpl_pose_list[-1], #torch.Size([1, 100, 22, 3, 3])
+            'pred_smpl_rhand_pose': outputs_smpl_rhand_pose_list[-1], #torch.Size([1, 100, 15, 3, 3])
+            'pred_smpl_lhand_pose': outputs_smpl_lhand_pose_list[-1], #torch.Size([1, 100, 15, 3, 3])
             'pred_smpl_jaw_pose': outputs_smpl_jaw_pose_list[-1],
             'pred_smpl_expr': outputs_smpl_expr_list[-1],
             'pred_smpl_beta': outputs_smpl_beta_list[-1],  # [B, 100, 10]
-            'pred_smpl_cam': outputs_smpl_cam_list[-1],
+            'pred_smpl_cam': outputs_smpl_cam_list[-1], #torch.Size([1, 100, 3])
             'pred_smpl_kp3d': outputs_smpl_kp3d_list[-1],
             'pred_smpl_verts': outputs_smpl_verts_list[-1],
             'pred_smpl_fullpose': full_pose

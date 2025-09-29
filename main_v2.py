@@ -6,7 +6,6 @@ import time
 import shutil
 from pathlib import Path
 import os, sys
-from tqdm import tqdm
 
 import numpy as np
 import torch
@@ -104,146 +103,92 @@ def build_model_main(args, cfg):
 def process_json_dataset(args, model, criterion, postprocessors, device, cfg):
     """Process JSON dataset to extract pose data for each sample"""
     
-    # Set model to inference mode
-    model.eval()
-    if hasattr(model, 'module'):
-        model.module.inference = True
-    else:
-        model.inference = True
-    
     # Load JSON dataset
-    print(f"Loading JSON dataset from: {args.json_dataset}")
     with open(args.json_dataset, 'r') as f:
         dataset = json.load(f)
-    print(f"Loaded {len(dataset)} samples")
     
     # Create temporary directory for processing
     temp_dir = os.path.join(args.output_dir, 'temp_processing')
     os.makedirs(temp_dir, exist_ok=True)
     
-    # Process each sample with progress bar
-    processed_count = 0
-    skipped_count = 0
-    
-    with tqdm(total=len(dataset), desc="Processing samples", unit="sample") as pbar:
-        for idx, sample in enumerate(dataset):
-            pbar.set_description(f"Processing sample {sample['id']}")
+    # Process each sample
+    for idx, sample in enumerate(dataset):
+        print(f"Processing sample {idx+1}/{len(dataset)}: {sample['id']}")
+        
+        # Find the human image (type=5)
+        human_img_idx = None
+        for i, img_type in enumerate(sample['type']):
+            if img_type == 5:
+                human_img_idx = i
+                break
+        
+        if human_img_idx is None:
+            print(f"No human image found in sample {sample['id']}")
+            sample['pose'] = []
+            sample['camera'] = []
+            continue
             
-            # Find the human image (type=5)
-            human_img_idx = None
-            for i, img_type in enumerate(sample['type']):
-                if img_type == 5:
-                    human_img_idx = i
-                    break
-            
-            if human_img_idx is None:
-                tqdm.write(f"⚠️  No human image found in sample {sample['id']}")
-                sample['pose'] = []
-                sample['camera'] = []
-                skipped_count += 1
-                pbar.update(1)
-                continue
-                
-            # Get the human image path
-            human_img_path = sample['image_withhuman'][human_img_idx]
-            if not human_img_path:  # Fallback to regular image if withhuman is empty
-                human_img_path = sample['image'][human_img_idx]
-            
-            # Full path to the image (assuming images are in same directory as JSON)
-            json_dir = os.path.dirname(args.json_dataset)
-            full_img_path = os.path.join(json_dir, human_img_path)
-            
-            if not os.path.exists(full_img_path):
-                tqdm.write(f"❌ Image not found: {full_img_path}")
-                sample['pose'] = []
-                sample['camera'] = []
-                skipped_count += 1
-                pbar.update(1)
-                continue
-            
-            # Create temporary directory for this image
-            sample_temp_dir = os.path.join(temp_dir, f"sample_{idx}")
-            os.makedirs(sample_temp_dir, exist_ok=True)
-            
-            # Copy image to temporary directory
-            temp_img_path = os.path.join(sample_temp_dir, os.path.basename(human_img_path))
-            shutil.copy2(full_img_path, temp_img_path)
-            
-            # Update config with human_num for this sample
-            human_num = sample.get('human_num', 1)
-            cfg.num_person = human_num
-            
-            # Update progress bar postfix
-            pbar.set_postfix({"humans": human_num, "processed": processed_count, "skipped": skipped_count})
-            
-            try:
-                # Create dataset for this single image
-                exec('from datasets.' + cfg.testset + ' import ' + cfg.testset)
-                
-                # Special handling for INFERENCE_demo - pass additional parameters
-                if cfg.testset == 'INFERENCE_demo':
-                    dataset_val = eval(cfg.testset)(sample_temp_dir, args.output_dir, 
-                                                    json_mode=True, human_num=human_num)
-                else:
-                    dataset_val = eval(cfg.testset)(sample_temp_dir, args.output_dir)
-                
-                data_loader_val = build_dataloader(
-                    dataset_val,
-                    args.batch_size,
-                    0 if 'workers_per_gpu' in args else 2,
-                    dist=args.distributed,
-                    shuffle=False)
-                
-                # Run inference
-                from engine import inference_json
-                pose_data, camera_data = inference_json(model, criterion, postprocessors,
-                                                       data_loader_val, device, args.output_dir,
-                                                       wo_class_error=False, args=args)
-                
-                # Add pose and camera data to sample
-                sample['pose'] = pose_data
-                sample['camera'] = camera_data
-                
-                if pose_data:
-                    tqdm.write(f"✓ Detected {len(pose_data)} person(s) in sample {sample['id']}")
-                    processed_count += 1
-                else:
-                    tqdm.write(f"⚠️  No persons detected in sample {sample['id']}")
-                    skipped_count += 1
-                    
-            except Exception as e:
-                tqdm.write(f"❌ Error processing sample {sample['id']}: {str(e)}")
-                sample['pose'] = []
-                sample['camera'] = []
-                skipped_count += 1
-            
-            finally:
-                # Clean up temporary directory for this sample
-                if os.path.exists(sample_temp_dir):
-                    shutil.rmtree(sample_temp_dir)
-                pbar.update(1)
-    
-    # Print summary
-    print("\n" + "="*50)
-    print(f"Processing Summary:")
-    print(f"  Total samples: {len(dataset)}")
-    print(f"  Successfully processed: {processed_count}")
-    print(f"  Skipped/Failed: {skipped_count}")
-    print("="*50)
+        # Get the human image path
+        human_img_path = sample['image_withhuman'][human_img_idx]
+        if not human_img_path:  # Fallback to regular image if withhuman is empty
+            human_img_path = sample['image'][human_img_idx]
+        
+        # Full path to the image (assuming images are in same directory as JSON)
+        json_dir = os.path.dirname(args.json_dataset)
+        full_img_path = os.path.join(json_dir, human_img_path)
+        
+        if not os.path.exists(full_img_path):
+            print(f"Image not found: {full_img_path}")
+            sample['pose'] = []
+            sample['camera'] = []
+            continue
+        
+        # Create temporary directory for this image
+        sample_temp_dir = os.path.join(temp_dir, f"sample_{idx}")
+        os.makedirs(sample_temp_dir, exist_ok=True)
+        
+        # Copy image to temporary directory
+        temp_img_path = os.path.join(sample_temp_dir, os.path.basename(human_img_path))
+        shutil.copy2(full_img_path, temp_img_path)
+        
+        # Update config with human_num for this sample
+        human_num = sample.get('human_num', 1)
+        cfg.num_person = human_num
+        
+        # Create dataset for this single image
+        exec('from datasets.' + cfg.testset + ' import ' + cfg.testset)
+        dataset_val = eval(cfg.testset)(sample_temp_dir, args.output_dir, 
+                                        json_mode=True, human_num=human_num)
+        
+        data_loader_val = build_dataloader(
+            dataset_val,
+            args.batch_size,
+            0 if 'workers_per_gpu' in args else 2,
+            dist=args.distributed,
+            shuffle=False)
+        
+        # Run inference
+        from engine import inference_json
+        pose_data, camera_data = inference_json(model, criterion, postprocessors,
+                                               data_loader_val, device, args.output_dir,
+                                               wo_class_error=False, args=args)
+        
+        # Add pose and camera data to sample
+        sample['pose'] = pose_data
+        sample['camera'] = camera_data
+        
+        # Clean up temporary directory for this sample
+        shutil.rmtree(sample_temp_dir)
     
     # Save updated dataset
     output_json_path = args.json_dataset.replace('.json', '_with_pose.json')
-    print(f"\nSaving updated dataset to: {output_json_path}")
-    
     with open(output_json_path, 'w') as f:
         json.dump(dataset, f, indent=2)
     
-    print(f"✅ Dataset saved successfully!")
+    print(f"Saved updated dataset to: {output_json_path}")
     
     # Clean up main temporary directory
-    if os.path.exists(temp_dir):
-        shutil.rmtree(temp_dir)
-        print("Cleaned up temporary files")
+    shutil.rmtree(temp_dir)
 
 
 def main(args):
@@ -349,15 +294,6 @@ def main(args):
     # Process JSON dataset if specified
     if args.process_json and args.json_dataset:
         os.environ['EVAL_FLAG'] = 'TRUE'
-        
-        # Ensure the model knows it's in inference mode
-        args.inference = True
-        args.eval = True
-        
-        # Set inference flag on model
-        if hasattr(model_without_ddp, 'inference'):
-            model_without_ddp.inference = True
-        
         model.eval()
         process_json_dataset(args, model, criterion, postprocessors, device, cfg)
         return
