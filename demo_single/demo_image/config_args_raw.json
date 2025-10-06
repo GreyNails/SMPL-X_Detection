@@ -1,0 +1,29 @@
+{
+  "config_file": "config/aios_smplx_demo.py",
+  "options": {
+    "batch_size": 1,
+    "backbone": "resnet50",
+    "num_person": 2,
+    "threshold": 0.1
+  },
+  "output_dir": "demo_single/demo_image",
+  "device": "cuda",
+  "seed": 42,
+  "resume": "data/checkpoint/aios_checkpoint.pth",
+  "pretrain_model_path": null,
+  "finetune_ignore": null,
+  "start_epoch": 0,
+  "eval": true,
+  "num_workers": 0,
+  "test": false,
+  "debug": false,
+  "find_unused_params": false,
+  "save_log": false,
+  "to_vid": false,
+  "inference": true,
+  "rank": 0,
+  "local_rank": null,
+  "amp": false,
+  "inference_input": "demo/img_dir_2",
+  "distributed": false
+}

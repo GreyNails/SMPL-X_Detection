@@ -759,11 +759,12 @@ def render_smpl(
         if kp3d is not None:
             warnings.warn('`plot_kps` is False, `kp3d` will be set as None.')
             kp3d = None
-
+    image_array=None
     image_array, remove_folder, frames_folder = _prepare_background(
         image_array, frame_list, origin_frames, output_path, start, end,
         img_format, overwrite, num_frames, read_frames_batch)
 
+    # image_array=None
     render_resolution = None
     if image_array is not None:
         render_resolution = (image_array.shape[1], image_array.shape[2])
