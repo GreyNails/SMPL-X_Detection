@@ -183,13 +183,15 @@ class INFERENCE_demo(torch.utils.data.Dataset):
                 self.extracted_cameras = sample_cameras
             
             # Original visualization code (if not in JSON mode)
-            if not self.json_mode and valid_count > 0:
+            # if not self.json_mode and valid_count > 0:
+            if valid_count > 0:
+
                 img = cv2.imread(img_paths[ann_idx])
                 scale = img.shape[1]/img_shape[0]
                 body_bbox = out['body_bbox'].clone().cpu().numpy()
                 body_bbox = body_bbox * scale
                 
-                if valid_count == 1:
+                if valid_count == 0:
                     cv2.imwrite(os.path.join(self.result_img_dir,img_paths[ann_idx].split('/')[-1]), img)
                 else:
                     verts = out['smpl_verts'][:valid_count] + out['cam_trans'][:valid_count][:, None] 
