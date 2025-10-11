@@ -7,6 +7,9 @@ import shutil
 from pathlib import Path
 import os, sys
 from tqdm import tqdm
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from threading import Lock
+import queue
 
 import numpy as np
 import torch
@@ -88,6 +91,12 @@ def get_args_parser():
     parser.add_argument('--process_json', action='store_true',
                        help='Process JSON dataset for pose extraction')
     
+    # Multi-threading arguments
+    parser.add_argument('--num_threads', default=4, type=int,
+                       help='Number of threads for parallel processing')
+    parser.add_argument('--batch_inference', default=1, type=int,
+                       help='Batch size for inference (process multiple samples together)')
+    
     return parser
 
 
@@ -101,8 +110,240 @@ def build_model_main(args, cfg):
     return model, criterion, postprocessors, _
 
 
+def prepare_sample(args_tuple):
+    """
+    准备单个样本 - 这个函数在线程池中并行执行
+    处理I/O密集型操作：文件查找、复制等
+    """
+    idx, sample, json_dir, temp_dir = args_tuple
+    
+    try:
+        # Find the human image (type=5)
+        human_img_idx = None
+        for i, img_type in enumerate(sample['type']):
+            if img_type == 5:
+                human_img_idx = i
+                break
+        
+        if human_img_idx is None:
+            return idx, sample, None, "No human image found"
+            
+        # Get the human image path
+        human_img_path = sample['image_withhuman'][human_img_idx]
+        if not human_img_path:
+            human_img_path = sample['image'][human_img_idx]
+        
+        # Full path to the image
+        full_img_path = os.path.join(json_dir, 'img', human_img_path)
+        
+        if not os.path.exists(full_img_path):
+            return idx, sample, None, f"Image not found: {full_img_path}"
+        
+        # Create temporary directory for this image
+        sample_temp_dir = os.path.join(temp_dir, f"sample_{idx}")
+        os.makedirs(sample_temp_dir, exist_ok=True)
+        
+        # Copy image to temporary directory
+        temp_img_path = os.path.join(sample_temp_dir, os.path.basename(human_img_path))
+        shutil.copy2(full_img_path, temp_img_path)
+        
+        # Get human_num for this sample
+        human_num = sample.get('human_num', 1)
+        
+        return idx, sample, {
+            'temp_dir': sample_temp_dir,
+            'human_num': human_num,
+            'image_path': temp_img_path
+        }, None
+        
+    except Exception as e:
+        return idx, sample, None, f"Error: {str(e)}"
+
+
+def inference_single_sample(model, criterion, postprocessors, device, 
+                           sample_info, args, cfg):
+    """
+    对单个样本进行推理 - GPU密集型操作
+    """
+    try:
+        # Update config with human_num for this sample
+        cfg.num_person = sample_info['human_num']
+        
+        # Create dataset for this single image
+        exec('from datasets.' + cfg.testset + ' import ' + cfg.testset)
+        
+        # Special handling for INFERENCE_demo
+        if cfg.testset == 'INFERENCE_demo':
+            dataset_val = eval(cfg.testset)(sample_info['temp_dir'], args.output_dir, 
+                                           json_mode=True, human_num=sample_info['human_num'])
+        else:
+            dataset_val = eval(cfg.testset)(sample_info['temp_dir'], args.output_dir)
+        
+        data_loader_val = build_dataloader(
+            dataset_val,
+            args.batch_size,
+            0 if 'workers_per_gpu' in args else 2,
+            dist=args.distributed,
+            shuffle=False)
+        
+        # Run inference
+        from engine import inference_json
+        pose_data, camera_data = inference_json(model, criterion, postprocessors,
+                                               data_loader_val, device, args.output_dir,
+                                               wo_class_error=False, args=args)
+        
+        return pose_data, camera_data, None
+        
+    except Exception as e:
+        return [], [], f"Inference error: {str(e)}"
+
+
+def process_json_dataset_multithreaded(args, model, criterion, postprocessors, device, cfg):
+    """
+    使用多线程批量处理JSON数据集
+    - 使用线程池并行处理数据预处理（I/O操作）
+    - GPU推理部分串行执行以避免资源竞争
+    """
+    
+    # Set model to inference mode
+    model.eval()
+    if hasattr(model, 'module'):
+        model.module.inference = True
+    else:
+        model.inference = True
+    
+    # Load JSON dataset
+    print(f"Loading JSON dataset from: {args.json_dataset}")
+    with open(args.json_dataset, 'r') as f:
+        dataset = json.load(f)
+    print(f"Loaded {len(dataset)} samples")
+    
+    # Create temporary directory for processing
+    temp_dir = os.path.join(args.output_dir, 'temp_processing')
+    os.makedirs(temp_dir, exist_ok=True)
+    
+    json_dir = os.path.dirname(args.json_dataset)
+    
+    # Statistics
+    processed_count = 0
+    skipped_count = 0
+    error_count = 0
+    
+    # Process samples in batches
+    batch_size = args.batch_inference
+    num_threads = args.num_threads
+    
+    print(f"\n{'='*60}")
+    print(f"Multi-threaded Processing Configuration:")
+    print(f"  Number of threads: {num_threads}")
+    print(f"  Batch size: {batch_size}")
+    print(f"  Total samples: {len(dataset)}")
+    print(f"{'='*60}\n")
+    
+    # Create progress bar
+    with tqdm(total=len(dataset), desc="Processing samples", unit="sample") as pbar:
+        # Process in batches
+        for batch_start in range(0, len(dataset), batch_size):
+            batch_end = min(batch_start + batch_size, len(dataset))
+            batch_samples = dataset[batch_start:batch_end]
+            
+            # Step 1: 并行预处理（I/O操作）
+            prepare_args = [
+                (batch_start + i, sample, json_dir, temp_dir) 
+                for i, sample in enumerate(batch_samples)
+            ]
+            
+            prepared_samples = []
+            
+            with ThreadPoolExecutor(max_workers=num_threads) as executor:
+                future_to_sample = {
+                    executor.submit(prepare_sample, args): args 
+                    for args in prepare_args
+                }
+                
+                for future in as_completed(future_to_sample):
+                    idx, sample, sample_info, error = future.result()
+                    
+                    if error:
+                        tqdm.write(f"⚠️  Sample {sample['id']}: {error}")
+                        sample['pose'] = []
+                        sample['camera'] = []
+                        skipped_count += 1
+                        pbar.update(1)
+                    else:
+                        prepared_samples.append((idx, sample, sample_info))
+            
+            # Step 2: 串行GPU推理（避免GPU资源竞争）
+            for idx, sample, sample_info in prepared_samples:
+                try:
+                    pbar.set_description(f"Inferencing sample {sample['id']}")
+                    
+                    pose_data, camera_data, error = inference_single_sample(
+                        model, criterion, postprocessors, device, 
+                        sample_info, args, cfg
+                    )
+                    
+                    if error:
+                        tqdm.write(f"❌ Sample {sample['id']}: {error}")
+                        sample['pose'] = []
+                        sample['camera'] = []
+                        error_count += 1
+                    else:
+                        sample['pose'] = pose_data
+                        sample['camera'] = camera_data
+                        
+                        if pose_data:
+                            tqdm.write(f"✓ Sample {sample['id']}: Detected {len(pose_data)} person(s)")
+                            processed_count += 1
+                        else:
+                            tqdm.write(f"⚠️  Sample {sample['id']}: No persons detected")
+                            skipped_count += 1
+                    
+                except Exception as e:
+                    tqdm.write(f"❌ Sample {sample['id']}: Unexpected error - {str(e)}")
+                    sample['pose'] = []
+                    sample['camera'] = []
+                    error_count += 1
+                
+                finally:
+                    # Clean up temporary directory
+                    if sample_info and os.path.exists(sample_info['temp_dir']):
+                        shutil.rmtree(sample_info['temp_dir'])
+                    
+                    pbar.update(1)
+                    pbar.set_postfix({
+                        "processed": processed_count, 
+                        "skipped": skipped_count,
+                        "errors": error_count
+                    })
+    
+    # Print summary
+    print("\n" + "="*60)
+    print(f"Processing Summary:")
+    print(f"  Total samples: {len(dataset)}")
+    print(f"  Successfully processed: {processed_count}")
+    print(f"  Skipped (no detection): {skipped_count}")
+    print(f"  Errors: {error_count}")
+    print(f"  Success rate: {processed_count/len(dataset)*100:.2f}%")
+    print("="*60)
+    
+    # Save updated dataset
+    output_json_path = args.json_dataset.replace('.json', '_with_pose.json')
+    print(f"\nSaving updated dataset to: {output_json_path}")
+    
+    with open(output_json_path, 'w') as f:
+        json.dump(dataset, f, indent=2)
+    
+    print(f"✅ Dataset saved successfully!")
+    
+    # Clean up main temporary directory
+    if os.path.exists(temp_dir):
+        shutil.rmtree(temp_dir)
+        print("Cleaned up temporary files")
+
+
 def process_json_dataset(args, model, criterion, postprocessors, device, cfg):
-    """Process JSON dataset to extract pose data for each sample"""
+    """原始的单线程处理函数（保留作为备份）"""
     
     # Set model to inference mode
     model.eval()
@@ -146,12 +387,12 @@ def process_json_dataset(args, model, criterion, postprocessors, device, cfg):
                 
             # Get the human image path
             human_img_path = sample['image_withhuman'][human_img_idx]
-            if not human_img_path:  # Fallback to regular image if withhuman is empty
+            if not human_img_path:
                 human_img_path = sample['image'][human_img_idx]
             
-            # Full path to the image (assuming images are in same directory as JSON)
+            # Full path to the image
             json_dir = os.path.dirname(args.json_dataset)
-            full_img_path = os.path.join(json_dir, 'img',human_img_path) #change
+            full_img_path = os.path.join(json_dir, 'img', human_img_path)
             
             if not os.path.exists(full_img_path):
                 tqdm.write(f"❌ Image not found: {full_img_path}")
@@ -180,7 +421,6 @@ def process_json_dataset(args, model, criterion, postprocessors, device, cfg):
                 # Create dataset for this single image
                 exec('from datasets.' + cfg.testset + ' import ' + cfg.testset)
                 
-                # Special handling for INFERENCE_demo - pass additional parameters
                 if cfg.testset == 'INFERENCE_demo':
                     dataset_val = eval(cfg.testset)(sample_temp_dir, args.output_dir, 
                                                     json_mode=True, human_num=human_num)
@@ -218,7 +458,6 @@ def process_json_dataset(args, model, criterion, postprocessors, device, cfg):
                 skipped_count += 1
             
             finally:
-                # Clean up temporary directory for this sample
                 if os.path.exists(sample_temp_dir):
                     shutil.rmtree(sample_temp_dir)
                 pbar.update(1)
@@ -359,7 +598,14 @@ def main(args):
             model_without_ddp.inference = True
         
         model.eval()
-        process_json_dataset(args, model, criterion, postprocessors, device, cfg)
+        
+        # 使用多线程版本或单线程版本
+        if args.num_threads > 1:
+            print(f"Using multi-threaded processing with {args.num_threads} threads")
+            process_json_dataset_multithreaded(args, model, criterion, postprocessors, device, cfg)
+        else:
+            print("Using single-threaded processing")
+            process_json_dataset(args, model, criterion, postprocessors, device, cfg)
         return
 
     # Original inference and training code continues here...
@@ -398,7 +644,6 @@ def main(args):
         shuffle=False)
     
     # Rest of the original main function continues...
-    # [Include the rest of your original main function here]
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser('DETR training and evaluation script',

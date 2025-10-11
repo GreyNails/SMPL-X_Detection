@@ -191,7 +191,9 @@ class INFERENCE_demo(torch.utils.data.Dataset):
                 body_bbox = out['body_bbox'].clone().cpu().numpy()
                 body_bbox = body_bbox * scale
                 
-                if valid_count == 0:
+                # if valid_count == 0:
+                if valid_count > 0:
+                
                     cv2.imwrite(os.path.join(self.result_img_dir,img_paths[ann_idx].split('/')[-1]), img)
                 else:
                     verts = out['smpl_verts'][:valid_count] + out['cam_trans'][:valid_count][:, None] 
