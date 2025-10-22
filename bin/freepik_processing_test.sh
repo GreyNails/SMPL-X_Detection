@@ -21,5 +21,5 @@ cd "/home/dell/DataTool-HumanCentric/detection_aios/AiOS" || {
     --eval \
     --inference \
     --process_json \
-    --json_dataset "/storage/HCL_data/Freepik/psd_processed/all_psd_data_test_detection.json" \
+    --json_dataset "/storage/HCL_data/Freepik/psd_processed/test/all_psd_data_test_detection.json" \
     --output_dir "demo/json_output_freekip_test"
